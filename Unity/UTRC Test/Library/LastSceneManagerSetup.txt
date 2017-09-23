@@ -1,0 +1,4 @@
+sceneSetups:
+- path: Assets/mutual_occlusion.unity
+  isLoaded: 1
+  isActive: 1

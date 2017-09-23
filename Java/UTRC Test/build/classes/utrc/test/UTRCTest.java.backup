@@ -1,0 +1,581 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+/*
+    The task is to morph a given sphere into a cube by moving the vertices of the sphere, while ensuring that the vertices travel the shortest distance possible.
+
+    To ensure minimum travel distance for the vertices, the surface area of the resulting cube must be equal to the surface area of the original sphere.
+
+    The task can then be accomplished by computing the bounds of the original sphere (which determines the total surface area covered by the sphere), 
+    then computing the appropriate bounds for the desired cube, and moving the vertices to the bounds that they are closest to, thus minimising travel distance for each vertex.
+
+    Surface area of a sphere = 4*PI*r^2 = PI*d^2, where r is radius, d is diameter and r = d/2.
+    Surface area of a cube = 6*l^2, where l is the length of one side.
+
+    Therefore, to obtain a cube with equivalent surface area of a given sphere, the length of one side of the cube must be = d*(PI/6)^1/2, where d is the diameter of the sphere.
+
+    The above value is obtained by equating the formulae of the surface area of a sphere and cube i.e. PI*d^2 = 6*l^2 and solving for l.
+    Hence the value (PI/6)^1/2 is stored in the morphConstant field and is multiplied by the bounds of the sphere to determine the bounds of the equivalent cube below.
+*/
+package utrc.test;
+
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Scanner;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
+/**
+ *
+ * @author Ade
+ */
+public class UTRCTest 
+{
+
+    /**
+     * @param args the command line arguments
+     * @throws java.io.FileNotFoundException
+     */
+    public static void main(String[] args) throws FileNotFoundException
+    {       
+        File sphereObj = new File("Test.obj");
+        //File sphereObj = new File("sphere.obj");
+        Scanner input = new Scanner(sphereObj);
+        Geometry sphere = new Geometry("Input sphere");
+        
+        String[] line;
+        while(input.hasNextLine())
+        {
+            line = input.nextLine().split(" ");
+            if(line.length==4 && line[0].equals("v"))
+            {
+                sphere.addVertex(new Vertex(Double.parseDouble(line[1]), Double.parseDouble(line[2]), Double.parseDouble(line[3])));
+            }
+            
+            if(line.length==4 && line[0].equals("f"))
+            {
+                sphere.addFace(new Face(Integer.parseInt(line[1]), Integer.parseInt(line[2]), Integer.parseInt(line[3])));
+            }
+        }
+        
+        //Geometry cube = sphere.morphToCube();
+        //System.out.println(cube);
+        //cube.writeToFile("cube");
+        
+        Geometry shape = sphere.morphToPolyhedron();
+        System.out.println(shape);
+        shape.writeToFile("shape");
+    }
+}
+
+class Geometry
+{
+    List<Vertex> vertices;
+    List<Face> faces;
+    String label;
+    
+    public Geometry(String l)
+    {
+        label = l;
+        vertices = new ArrayList<>();
+        faces = new ArrayList<>();
+    }
+    
+    public void addVertex(Vertex v)
+    {
+        vertices.add(v);
+    }
+    
+    public void addFace(Face f)
+    {
+        faces.add(f);
+    }
+    
+    public void writeToFile(String fileName) throws FileNotFoundException
+    {
+        PrintWriter output = new PrintWriter(fileName+".obj");
+        for(Vertex v : vertices)
+            output.println(v);
+        for(Face f : faces)
+            output.println(f);
+        output.close();
+    }
+    
+    public String toString()
+    {
+        return label+", Vertex count: "+vertices.size()+", Face count: "+faces.size();
+    }
+        
+    public Geometry morphToCube()
+    {
+        Geometry cube = this;
+        cube.label = "Output Cube";
+        double morphConstant = (double) Math.sqrt(Math.PI / 6);	//see explanation above
+        double xMaxBounds, yMaxBounds, zMaxBounds, xMinBounds, yMinBounds, zMinBounds;	//the min and max bounds of the mesh along the x, y and z axes
+        double currentX, currentY, currentZ;	//variables used to store values of the current vertex
+
+	//initialise mesh bounds with max and min float values
+	xMaxBounds = yMaxBounds = zMaxBounds = Double.MIN_VALUE;
+	xMinBounds = yMinBounds = zMinBounds = Double.MAX_VALUE;
+
+	//compute actual mesh bounds by getting the max and min values along the x, y and z axes
+	//Note: The absolute difference between the max and min bounds on any axis is the diameter of the sphere along that axis
+	//and the value is the same along the three axes for a perfectly-rounded shpere
+        for(Vertex v : vertices)
+        {
+            xMaxBounds = v.x > xMaxBounds ? v.x : xMaxBounds;
+            xMinBounds = v.x < xMinBounds ? v.x : xMinBounds;
+            yMaxBounds = v.y > yMaxBounds ? v.y : yMaxBounds;
+            yMinBounds = v.y < yMinBounds ? v.y : yMinBounds;
+            zMaxBounds = v.z > zMaxBounds ? v.z : zMaxBounds;
+            zMinBounds = v.z < zMinBounds ? v.z : zMinBounds;
+        }
+        
+	//multiply the bounds of the sphere by the morphconstant to get the bounds for the cube of equivalent surface area
+        xMaxBounds *= morphConstant;
+        xMinBounds *= morphConstant;
+        yMaxBounds *= morphConstant;
+        yMinBounds *= morphConstant;
+        zMaxBounds *= morphConstant;
+        zMinBounds *= morphConstant;
+
+        //for each vertex, move the x, y and z coordinates to the closer of the max bound and min bound along the x, y and z axes respectively
+	//then update the vertex in the mesh to see how the morphing occurs in real-time
+        for(Vertex v : vertices)
+        {
+            currentX = isCloserToMax(v.x, xMaxBounds, xMinBounds) ? xMaxBounds : xMinBounds;
+            currentY = isCloserToMax(v.y, yMaxBounds, yMinBounds) ? yMaxBounds : yMinBounds;
+            currentZ = isCloserToMax(v.z, zMaxBounds, zMinBounds) ? zMaxBounds : zMinBounds;
+            v.updateVertex(currentX, currentY, currentZ);
+        }      
+        
+        return cube;
+    }
+    
+    public Geometry morphToPolyhedron()
+    {
+        Geometry polyhedron = this;
+        polyhedron.label = "Output Polyhedron";
+        double morphConstant = (double) Math.sqrt(Math.PI / 6);	//see explanation above
+        //double morphConstant = 0.67;
+        double xMaxBounds, yMaxBounds, zMaxBounds, xMinBounds, yMinBounds, zMinBounds;	//the min and max bounds of the mesh along the x, y and z axes
+        double currentX, currentY, currentZ, closestPoint;	//variables used to store values of the current vertex
+        double inverseSqrt2 = 0.70710676908493042;
+	//initialise mesh bounds with max and min float values
+	xMaxBounds = yMaxBounds = zMaxBounds = Double.MIN_VALUE;
+	xMinBounds = yMinBounds = zMinBounds = Double.MAX_VALUE;
+
+	//compute actual mesh bounds by getting the max and min values along the x, y and z axes
+	//Note: The absolute difference between the max and min bounds on any axis is the diameter of the sphere along that axis
+	//and the value is the same along the three axes for a perfectly-rounded shpere
+        for(Vertex v : vertices)
+        {
+            xMaxBounds = v.x > xMaxBounds ? v.x : xMaxBounds;
+            xMinBounds = v.x < xMinBounds ? v.x : xMinBounds;
+            yMaxBounds = v.y > yMaxBounds ? v.y : yMaxBounds;
+            yMinBounds = v.y < yMinBounds ? v.y : yMinBounds;
+            zMaxBounds = v.z > zMaxBounds ? v.z : zMaxBounds;
+            zMinBounds = v.z < zMinBounds ? v.z : zMinBounds;
+        }
+        
+        /*
+        //multiply the bounds of the sphere by the morphconstant to get the bounds for the cube of equivalent surface area
+        xMaxBounds *= morphConstant;
+        xMinBounds *= morphConstant;
+        yMaxBounds *= morphConstant;
+        yMinBounds *= morphConstant;
+        zMaxBounds *= morphConstant;
+        zMinBounds *= morphConstant;
+        */
+        
+        for(Vertex v : vertices)
+	{
+            currentX = v.x; currentY = v.y; currentZ = v.z;
+            closestPoint = maxVal(v.x, v.y, v.z);
+
+            if (areEqual(closestPoint, v.x))
+            {
+                double a2 = currentY * currentY * 2.0;
+                double b2 = currentZ * currentZ * 2.0;
+                double inner = -a2 + b2 -3;
+                double innersqrt = -Math.sqrt((inner * inner) - 12.0 * a2);
+
+                if(currentY == 0.0 || currentY == -0.0) 
+                    v.y = 0.0; 
+                else 
+                    v.y = Math.sqrt(innersqrt + a2 - b2 + 3.0) * inverseSqrt2;
+                if(currentZ == 0.0 || currentZ == -0.0) 
+                    v.z = 0.0;
+                else 
+                    v.z = Math.sqrt(innersqrt - a2 + b2 + 3.0) * inverseSqrt2;
+
+                /*
+                if(v.y > 1.0) 
+                    v.y = 1.0;
+                if(v.z > 1.0) 
+                    v.z = 1.0;
+                */
+                
+                if(currentY < 0) 
+                    v.y = -v.y;
+                if(currentZ < 0) 
+                    v.z = -v.z;
+
+                v.x = isCloserToMax(currentX, xMaxBounds, xMinBounds) ? xMaxBounds : xMinBounds;
+                //v.x = isCloserToMax(currentX, 1.0, -1.0) ? 1.0 : -1.0;
+            }
+            else if (areEqual(closestPoint, v.y))
+            {
+                double a2 = currentX * currentX * 2.0;
+                double b2 = currentZ * currentZ * 2.0;
+                double inner = -a2 + b2 -3;
+                double innersqrt = -Math.sqrt((inner * inner) - 12.0 * a2);
+
+                if(currentX == 0.0 || currentX == -0.0) 
+                    v.x = 0.0; 
+                else 
+                    v.x = Math.sqrt(innersqrt + a2 - b2 + 3.0) * inverseSqrt2;
+                if(currentZ == 0.0 || currentZ == -0.0) 
+                    v.z = 0.0;
+                else 
+                    v.z = Math.sqrt(innersqrt - a2 + b2 + 3.0) * inverseSqrt2;
+
+                /*
+                if(v.x > 1.0) 
+                    v.x = 1.0;
+                if(v.z > 1.0) 
+                    v.z = 1.0;
+                */
+                
+                if(currentX < 0) 
+                    v.x = -v.x;
+                if(currentZ < 0) 
+                    v.z = -v.z;
+
+                v.y = isCloserToMax(currentY, yMaxBounds, yMinBounds) ? yMaxBounds : yMinBounds;
+                //v.y = isCloserToMax(currentY, 1.0, -1.0) ? 1.0 : -1.0;
+            }
+            else if (areEqual(closestPoint, v.z))
+            {
+                double a2 = currentX * currentX * 2.0;
+                double b2 = currentY * currentY * 2.0;
+                double inner = -a2 + b2 -3;
+                double innersqrt = -Math.sqrt((inner * inner) - 12.0 * a2);
+
+                if(currentX == 0.0 || currentX == -0.0) 
+                    v.x = 0.0; 
+                else 
+                    v.x = Math.sqrt(innersqrt + a2 - b2 + 3.0) * inverseSqrt2;
+
+                if(currentY == 0.0 || currentY == -0.0) 
+                    v.y = 0.0;
+                else 
+                    v.y = Math.sqrt(innersqrt - a2 + b2 + 3.0) * inverseSqrt2;
+
+                /*
+                if(v.x > 1.0) 
+                    v.x = 1.0;
+                if(v.y > 1.0) 
+                    v.y = 1.0;
+                */
+                
+                if(currentX < 0) 
+                    v.x = -v.x;
+                if(currentY < 0) 
+                    v.y = -v.y;
+
+                v.z = isCloserToMax(currentZ, zMaxBounds, zMinBounds) ? zMaxBounds : zMinBounds;
+                //v.z = isCloserToMax(currentZ, 1.0, -1.0) ? 1.0 : -1.0;
+            }
+	}
+        
+        /*
+        for(Vertex v : vertices)
+	{
+            closestPoint = maxVal(v.x, v.y, v.z);
+            if (areEqual(closestPoint, v.x)) //if (closestPoint == Math.Abs(currentX))
+            {
+                currentX = isCloserToMax(v.x, xMaxBounds, xMinBounds) ? xMaxBounds : xMinBounds;
+                v.updateVertex(currentX, v.y, v.z);
+            }
+            if (areEqual(closestPoint, v.y)) //else if (closestPoint == Math.Abs(currentY))
+            {
+                currentY = isCloserToMax(v.y, yMaxBounds, yMinBounds) ? yMaxBounds : yMinBounds;
+                v.updateVertex(v.x, currentY, v.z);
+            }
+            if (areEqual(closestPoint, v.z)) //else if (closestPoint == Math.Abs(currentZ))
+            {
+                currentZ = isCloserToMax(v.z, zMaxBounds, zMinBounds) ? zMaxBounds : zMinBounds;
+                v.updateVertex(v.x, v.y, currentZ);
+            }
+	}
+        */
+        return polyhedron;
+    }
+    
+    /*
+    public void cubizeVertex(Vertex v)
+    {
+        double x,y,z;
+        x = v.x;
+        y = v.y;
+        z = v.z;
+
+        double fx, fy, fz;
+        fx = Math.abs(x);
+        fy = Math.abs(y);
+        fz = Math.abs(z);
+
+        double inverseSqrt2 = 0.70710676908493042;
+
+        if (fy >= fx && fy >= fz) 
+        {
+            double a2 = x * x * 2.0;
+            double b2 = z * z * 2.0;
+            double inner = -a2 + b2 -3;
+            double innersqrt = -Math.sqrt((inner * inner) - 12.0 * a2);
+
+            if(x == 0.0 || x == -0.0) 
+            { 
+                v.x = 0.0; 
+            }
+            else 
+            {
+                v.x = Math.sqrt(innersqrt + a2 - b2 + 3.0) * inverseSqrt2;
+            }
+
+            if(z == 0.0 || z == -0.0) 
+            {
+                v.z = 0.0;
+            }
+            else 
+            {
+                v.z = Math.sqrt(innersqrt - a2 + b2 + 3.0) * inverseSqrt2;
+            }
+
+            if(v.x > 1.0) v.x = 1.0;
+            if(v.z > 1.0) v.z = 1.0;
+
+            if(x < 0) v.x = -v.x;
+            if(z < 0) v.z = -v.z;
+
+            if (y > 0) 
+            {
+                // top face
+                v.y = 1.0;
+            }
+            else 
+            {
+                // bottom face
+                v.y = -1.0;
+            }
+        }
+        else if (fx >= fy && fx >= fz) 
+        {
+            double a2 = y * y * 2.0;
+            double b2 = z * z * 2.0;
+            double inner = -a2 + b2 -3;
+            double innersqrt = -Math.sqrt((inner * inner) - 12.0 * a2);
+
+            if(y == 0.0 || y == -0.0) { 
+                v.y = 0.0; 
+            }
+            else {
+                v.y = Math.sqrt(innersqrt + a2 - b2 + 3.0) * inverseSqrt2;
+            }
+
+            if(z == 0.0 || z == -0.0) {
+                v.z = 0.0;
+            }
+            else {
+                v.z = Math.sqrt(innersqrt - a2 + b2 + 3.0) * inverseSqrt2;
+            }
+
+            if(v.y > 1.0) v.y = 1.0;
+            if(v.z > 1.0) v.z = 1.0;
+
+            if(y < 0) v.y = -v.y;
+            if(z < 0) v.z = -v.z;
+
+            if (x > 0) 
+            {
+                // right face
+                v.x = 1.0;
+            }
+            else 
+            {
+                // left face
+                v.x = -1.0;
+            }
+        }
+        else 
+        {
+            double a2 = x * x * 2.0;
+            double b2 = y * y * 2.0;
+            double inner = -a2 + b2 -3;
+            double innersqrt = -Math.sqrt((inner * inner) - 12.0 * a2);
+
+            if(x == 0.0 || x == -0.0) { 
+                v.x = 0.0; 
+            }
+            else {
+                v.x = Math.sqrt(innersqrt + a2 - b2 + 3.0) * inverseSqrt2;
+            }
+
+            if(y == 0.0 || y == -0.0) {
+                v.y = 0.0;
+            }
+            else {
+                v.y = Math.sqrt(innersqrt - a2 + b2 + 3.0) * inverseSqrt2;
+            }
+
+            if(v.x > 1.0) v.x = 1.0;
+            if(v.y > 1.0) v.y = 1.0;
+
+            if(x < 0) v.x = -v.x;
+            if(y < 0) v.y = -v.y;
+
+            if (z > 0) 
+            {
+                // front face
+                v.z = 1.0;
+            }
+            else 
+            {
+                // back face
+                v.z = -1.0;
+            }
+        }
+    } 
+    
+    
+    */
+    
+    Boolean isCloserToMax(double curr, double max, double min)	//this method returns true if the distance between curr and max is smaller than the distance between curr and min
+    {
+        return Math.abs(curr - max) <= Math.abs(curr - min);
+    }
+    
+    double maxVal(double x, double y, double z)	//this method returns the largest of three float numbers
+    {
+        return Math.max(Math.abs(x), Math.max(Math.abs(y), Math.abs(z)));
+    }
+
+    Boolean areEqual(double x, double y)	//this method checks whether two floats are equal. It is a more reliable alternative to using the "==" operator on float numbers
+    {
+        final double epsilon = 0.000000000000000001;	//this constant is the margin for imprecision used to check whether two floats are equal
+        return Math.abs(x) - Math.abs(y) <= epsilon;
+    }
+    
+    /*
+    public Geometry morphToPolyhedron()
+    {
+        Geometry polyhedron = this;
+        polyhedron.label = "Output Polyhedron";
+        double morphConstant = (double) Math.sqrt(Math.PI / 6);	//see explanation above
+        double xMaxBounds, yMaxBounds, zMaxBounds, xMinBounds, yMinBounds, zMinBounds;	//the min and max bounds of the mesh along the x, y and z axes
+        double closestPoint;	//variables used to store values of the current vertex
+
+	//initialise mesh bounds with max and min float values
+	xMaxBounds = yMaxBounds = zMaxBounds = Double.MIN_VALUE;
+	xMinBounds = yMinBounds = zMinBounds = Double.MAX_VALUE;
+
+	//compute actual mesh bounds by getting the max and min values along the x, y and z axes
+	//Note: The absolute difference between the max and min bounds on any axis is the diameter of the sphere along that axis
+	//and the value is the same along the three axes for a perfectly-rounded shpere
+        for(Vertex v : vertices)
+        {
+            xMaxBounds = v.x > xMaxBounds ? v.x : xMaxBounds;
+            xMinBounds = v.x < xMinBounds ? v.x : xMinBounds;
+            yMaxBounds = v.y > yMaxBounds ? v.y : yMaxBounds;
+            yMinBounds = v.y < yMinBounds ? v.y : yMinBounds;
+            zMaxBounds = v.z > zMaxBounds ? v.z : zMaxBounds;
+            zMinBounds = v.z < zMinBounds ? v.z : zMinBounds;
+        }
+       
+	for(Vertex v : vertices)
+	{
+            closestPoint = maxVal(v.x, v.y, v.z);
+            if (areEqual(closestPoint, v.x)) //if (closestPoint == Math.Abs(currentX))
+            {
+                if (v.x > 0)//move to max
+		{
+                    v.updateVertex(xMaxBounds, v.y, v.z);
+		}
+		else//move to min
+		{
+                    v.updateVertex(xMinBounds, v.y, v.z);
+		}
+            }
+            else if (areEqual(closestPoint, v.y)) //else if (closestPoint == Math.Abs(currentY))
+            {
+                if (v.y > 0)//move to max
+		{
+                    v.updateVertex(v.x, yMaxBounds, v.z);
+		}
+		else//move to min
+		{
+                    v.updateVertex(v.x, yMinBounds, v.z);
+		}
+            }
+            else if (areEqual(closestPoint, v.z)) //else if (closestPoint == Math.Abs(currentZ))
+            {
+                if (v.z > 0)//move to max
+		{
+                    v.updateVertex(v.x, v.y, zMaxBounds);
+		}
+		else//move to min
+		{
+                    v.updateVertex(v.x, v.y, zMinBounds);
+		}
+            }
+	}
+        return polyhedron;
+    }
+    */
+}
+
+class Vertex
+{
+    public double x, y, z;
+    
+    public Vertex(double x, double y, double z)
+    {
+        this.x = x;
+        this.y = y;
+        this.z = z;        
+    }
+    
+    public void updateVertex(double newX, double newY, double newZ)
+    {
+        x = newX;
+        y = newY;
+        z = newZ;
+    }    
+    
+    @Override
+    public String toString()
+    {
+        return "v "+x+" "+y+" "+z;
+    }
+}
+
+class Face
+{
+    public int v1, v2, v3;
+    public Face(int a, int b, int c)
+    {
+        v1 = a;
+        v2 = b;
+        v3 = c;
+    }
+    
+    @Override
+    public String toString()
+    {
+        return "f "+v1+" "+v2+" "+v3;
+    }       
+}
